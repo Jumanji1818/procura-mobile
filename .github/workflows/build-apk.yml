@@ -12,6 +12,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -33,22 +34,36 @@ jobs:
       - name: Extract Procura source
         shell: bash
         run: |
-          mkdir extracted
-          archive="$(find . -maxdepth 1 -type f -name '*.zip' | head -n 1)"
-          test -n "$archive"
-          unzip -q "$archive" -d extracted
-          test -f extracted/procura_app/pubspec.yaml
+          mkdir -p extracted
 
-      -       - name: Install Flutter packages
+          archive="$(find . -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+
+          if [ -z "$archive" ]; then
+            echo "No Procura ZIP archive was found."
+            exit 1
+          fi
+
+          echo "Using source archive: $archive"
+          unzip -q "$archive" -d extracted
+
+          if [ ! -f extracted/procura_app/pubspec.yaml ]; then
+            echo "The archive does not contain procura_app/pubspec.yaml."
+            exit 1
+          fi
+
+      - name: Install Flutter packages
         working-directory: extracted/procura_app
         run: |
           sed -i '/^[[:space:]]*riverpod_annotation:/d' pubspec.yaml
           sed -i '/^[[:space:]]*riverpod_generator:/d' pubspec.yaml
           flutter pub get
 
-      -       - name: Generate Drift database code
+      - name: Generate Drift database code
         working-directory: extracted/procura_app
-        run: dart run build_runner build --delete-conflicting-outputs --verbose
+        run: |
+          dart run build_runner build \
+            --delete-conflicting-outputs \
+            --verbose
 
       - name: Analyze project
         working-directory: extracted/procura_app
