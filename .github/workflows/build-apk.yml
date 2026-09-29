@@ -61,8 +61,9 @@ jobs:
       - name: Generate Drift database code
         working-directory: extracted/procura_app
         run: |
-          dart run build_runner build \
+          timeout 10m dart run build_runner build \
             --delete-conflicting-outputs \
+            --build-filter=lib/data/db/app_database.g.dart \
             --verbose
 
       - name: Analyze project
