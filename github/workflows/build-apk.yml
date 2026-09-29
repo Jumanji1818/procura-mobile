@@ -12,6 +12,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Check out repository
@@ -26,26 +27,56 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.29.0"
+          flutter-version: "3.47.5"
           channel: stable
           cache: true
 
       - name: Extract Procura source
         shell: bash
         run: |
-          mkdir extracted
+          mkdir -p extracted
+
           archive="$(find . -maxdepth 1 -type f -name '*.zip' | head -n 1)"
-          test -n "$archive"
+
+          if [ -z "$archive" ]; then
+            echo "No Procura ZIP archive was found."
+            exit 1
+          fi
+
+          echo "Using source archive: $archive"
+
           unzip -q "$archive" -d extracted
-          test -f extracted/procura_app/pubspec.yaml
+
+          if [ ! -f extracted/procura_app/pubspec.yaml ]; then
+            echo "The archive does not contain extracted/procura_app/pubspec.yaml."
+            exit 1
+          fi
 
       - name: Install Flutter packages
         working-directory: extracted/procura_app
-        run: flutter pub get
+        run: |
+          dart pub remove riverpod_annotation || true
+          dart pub remove riverpod_generator || true
+          flutter pub get
 
       - name: Generate Drift database code
         working-directory: extracted/procura_app
-        run: dart run build_runner build --delete-conflicting-outputs
+        timeout-minutes: 12
+        run: |
+          dart run build_runner build \
+            --delete-conflicting-outputs \
+            --build-filter="lib/data/db/app_database.g.dart" \
+            --verbose
+
+      - name: Confirm generated database file
+        working-directory: extracted/procura_app
+        run: |
+          if [ ! -f lib/data/db/app_database.g.dart ]; then
+            echo "Drift did not generate app_database.g.dart."
+            exit 1
+          fi
+
+          echo "Generated database file found."
 
       - name: Analyze project
         working-directory: extracted/procura_app
@@ -58,6 +89,16 @@ jobs:
       - name: Build Android APK
         working-directory: extracted/procura_app
         run: flutter build apk --release --dart-define=SHOW_DEMO_HINT=false
+
+      - name: Confirm APK file
+        working-directory: extracted/procura_app
+        run: |
+          if [ ! -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            echo "APK was not created."
+            exit 1
+          fi
+
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
