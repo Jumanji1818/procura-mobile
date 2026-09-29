@@ -1,0 +1,67 @@
+name: Build Procura Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.29.0"
+          channel: stable
+          cache: true
+
+      - name: Extract Procura source
+        shell: bash
+        run: |
+          mkdir extracted
+          archive="$(find . -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+          test -n "$archive"
+          unzip -q "$archive" -d extracted
+          test -f extracted/procura_app/pubspec.yaml
+
+      - name: Install Flutter packages
+        working-directory: extracted/procura_app
+        run: flutter pub get
+
+      - name: Generate Drift database code
+        working-directory: extracted/procura_app
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze project
+        working-directory: extracted/procura_app
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        working-directory: extracted/procura_app
+        run: flutter test
+
+      - name: Build Android APK
+        working-directory: extracted/procura_app
+        run: flutter build apk --release --dart-define=SHOW_DEMO_HINT=false
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: procura-apk
+          path: extracted/procura_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
